@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISIN Mappings</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-indigo-900 shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                        </svg>
+                    </div>
+                    <span class="text-xl font-bold text-white tracking-tight">InvestEngine</span>
+                </div>
+                <div class="flex items-center space-x-1">
+                    <a href="/" class="px-4 py-2 rounded-md text-sm font-medium text-indigo-100 hover:bg-indigo-800 hover:text-white transition-all">Dashboard</a>
+                    <a href="/upload/" class="px-4 py-2 rounded-md text-sm font-medium text-indigo-100 hover:bg-indigo-800 hover:text-white transition-all">Upload</a>
+                    <a href="/mappings/" class="px-4 py-2 rounded-md text-sm font-medium bg-indigo-800 text-white shadow-sm">Mappings</a>
+                    <a href="/rebalance/" class="px-4 py-2 rounded-md text-sm font-medium text-indigo-100 hover:bg-indigo-800 hover:text-white transition-all">Rebalance</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div class="mb-10">
+            <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight text-center">Security Mappings</h1>
+            <p class="mt-2 text-lg text-gray-500 text-center">Link investment ISINs to market ticker symbols for live pricing.</p>
+        </div>
+
+        <div id="missing-section" class="hidden mb-10">
+            <div class="bg-amber-50 border border-amber-100 rounded-2xl p-8 shadow-sm">
+                <div class="flex items-center mb-4">
+                    <div class="p-2 bg-amber-100 rounded-lg mr-3">
+                        <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    </div>
+                    <h2 class="text-xl font-bold text-amber-900">Missing Ticker Definitions</h2>
+                </div>
+                <p class="text-amber-800 font-medium mb-6">These ISINs were found in your trades but have no ticker mapping. Calculations will skip these until mapped.</p>
+                <div id="missing-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-6">Define New Mapping</h2>
+            <div class="flex flex-wrap gap-4">
+                <div class="flex-1 min-w-[200px]">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">ISIN Code</label>
+                    <input type="text" id="new-isin" placeholder="IE00B3XXRP09" 
+                        class="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all outline-none font-mono">
+                </div>
+                <div class="flex-1 min-w-[150px]">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Yahoo Ticker</label>
+                    <input type="text" id="new-ticker" placeholder="VUSA.L" 
+                        class="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all outline-none font-mono">
+                </div>
+                <div class="flex items-end">
+                    <button onclick="addNewMapping()" class="h-[50px] px-8 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-md shadow-indigo-100">
+                        Register Mapping
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-8 py-6 border-b border-gray-50 flex items-center justify-between">
+                <h2 class="text-xl font-bold text-gray-900">Registry</h2>
+                <span class="px-3 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-full uppercase tracking-tighter">Verified Mappings</span>
+            </div>
+            <div id="mappings-table" class="p-8">
+                <div class="flex items-center justify-center h-32">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="result" class="mt-8"></div>
+    </main>
+
+    <script>
+        window.onload = function() {
+            loadMappings();
+            loadMissingISINs();
+        };
+
+        function loadMappings() {
+            fetch('/mapping/')
+                .then(response => response.json())
+                .then(data => {
+                    const tableDiv = document.getElementById('mappings-table');
+                    if (data.success && data.mappings.length > 0) {
+                        let html = `<div class="overflow-x-auto"><table class="w-full"><thead><tr class="text-left">
+                            <th class="pb-4 px-2 text-xs font-bold text-gray-400 uppercase tracking-widest">ISIN</th>
+                            <th class="pb-4 px-2 text-xs font-bold text-gray-400 uppercase tracking-widest">Ticker</th>
+                            <th class="pb-4 px-2 text-xs font-bold text-gray-400 uppercase tracking-widest">Security Name</th>
+                            <th class="pb-4 px-2 text-right text-xs font-bold text-gray-400 uppercase tracking-widest">Actions</th>
+                        </tr></thead><tbody>`;
+                        data.mappings.forEach(m => {
+                            html += `<tr class="group hover:bg-gray-50/50 transition-colors">
+                                <td class="py-4 px-2 font-mono text-sm text-gray-900 border-t border-gray-50">${m.isin}</td>
+                                <td class="py-4 px-2 font-mono text-sm font-bold text-indigo-600 border-t border-gray-50" id="ticker-${m.isin}">${m.ticker}</td>
+                                <td class="py-4 px-2 text-sm text-gray-500 border-t border-gray-50">${m.security_name || '—'}</td>
+                                <td class="py-4 px-2 text-right space-x-4 border-t border-gray-50">
+                                    <button onclick="startEdit('${m.isin}')" class="text-indigo-600 hover:text-indigo-900 text-xs font-bold uppercase tracking-tighter transition-colors">Edit</button>
+                                    <button onclick="deleteMapping('${m.isin}')" class="text-red-400 hover:text-red-700 text-xs font-bold uppercase tracking-tighter transition-colors">Delete</button>
+                                </td>
+                            </tr>`;
+                        });
+                        html += '</tbody></table></div>';
+                        tableDiv.innerHTML = html;
+                    } else if (data.success) {
+                        tableDiv.innerHTML = '<div class="text-center py-12"><p class="text-gray-400 font-medium">No mappings configured yet.</p></div>';
+                    } else {
+                        tableDiv.innerHTML = `<p class="text-red-600">Error: ${data.error}</p>`;
+                    }
+                });
+        }
+
+        function loadMissingISINs() {
+            fetch('/mapping/missing/')
+                .then(response => response.json())
+                .then(data => {
+                    const section = document.getElementById('missing-section');
+                    const listDiv = document.getElementById('missing-list');
+                    if (data.success && data.count > 0) {
+                        let html = '';
+                        data.missing_isins.forEach(isin => {
+                            html += `<div class="bg-white rounded-xl p-4 shadow-sm border border-amber-100 flex items-center justify-between">
+                                <span class="font-mono text-sm font-bold text-gray-700">${isin}</span>
+                                <div class="flex gap-2">
+                                    <input type="text" id="ticker-for-${isin}" placeholder="Enter Ticker" class="w-28 px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-amber-400">
+                                    <button onclick="quickAdd('${isin}')" class="px-3 py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 text-xs font-bold transition-all">Add</button>
+                                </div>
+                            </div>`;
+                        });
+                        listDiv.innerHTML = html;
+                        section.classList.remove('hidden');
+                    } else {
+                        section.classList.add('hidden');
+                    }
+                });
+        }
+
+        function startEdit(isin) {
+            const cell = document.getElementById(`ticker-${isin}`);
+            const currentTicker = cell.innerText;
+            cell.innerHTML = `<input type="text" id="edit-${isin}" value="${currentTicker}" class="w-24 px-2 py-1 border border-blue-500 rounded text-sm">
+                <button onclick="saveEdit('${isin}')" class="ml-1 text-green-600 hover:text-green-800 text-sm">Save</button>
+                <button onclick="loadMappings()" class="ml-1 text-gray-600 hover:text-gray-800 text-sm">Cancel</button>`;
+        }
+
+        function saveEdit(isin) {
+            const newTicker = document.getElementById(`edit-${isin}`).value.trim();
+            if (!newTicker) return alert('Ticker cannot be empty');
+            
+            fetch('/mapping/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify([{ isin, ticker: newTicker }])
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data[0]?.success) {
+                    showResult('Mapping updated', 'green');
+                    loadMappings();
+                    loadMissingISINs();
+                } else {
+                    showResult('Error: ' + (data[0]?.error || 'Unknown'), 'red');
+                }
+            });
+        }
+
+        function deleteMapping(isin) {
+            if (!confirm(`Delete mapping for ${isin}?`)) return;
+            fetch(`/mapping/${isin}/`, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showResult('Mapping deleted', 'green');
+                        loadMappings();
+                        loadMissingISINs();
+                    } else {
+                        showResult('Error: ' + data.error, 'red');
+                    }
+                });
+        }
+
+        function addNewMapping() {
+            const isin = document.getElementById('new-isin').value.trim();
+            const ticker = document.getElementById('new-ticker').value.trim();
+            if (!isin || !ticker) return alert('Both fields required');
+            
+            fetch('/mapping/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify([{ isin, ticker }])
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data[0]?.success) {
+                    showResult('Mapping added', 'green');
+                    document.getElementById('new-isin').value = '';
+                    document.getElementById('new-ticker').value = '';
+                    loadMappings();
+                    loadMissingISINs();
+                } else {
+                    showResult('Error: ' + (data[0]?.error || 'Unknown'), 'red');
+                }
+            });
+        }
+
+        function quickAdd(isin) {
+            const ticker = document.getElementById(`ticker-for-${isin}`).value.trim();
+            if (!ticker) return alert('Enter a ticker');
+            
+            fetch('/mapping/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify([{ isin, ticker }])
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data[0]?.success) {
+                    showResult(`Added ${isin}`, 'green');
+                    loadMappings();
+                    loadMissingISINs();
+                } else {
+                    showResult('Error: ' + (data[0]?.error || 'Unknown'), 'red');
+                }
+            });
+        }
+
+        function showResult(msg, color) {
+            const colors = { green: 'bg-green-50 border-green-200 text-green-800', red: 'bg-red-50 border-red-200 text-red-800' };
+            document.getElementById('result').innerHTML = `<div class="${colors[color]} border rounded-lg p-3">${msg}</div>`;
+            setTimeout(() => document.getElementById('result').innerHTML = '', 3000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+target/
+.git/
+.env
+investengine.db
+statements/
+.DS_Store

@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-indigo-900 shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                        </svg>
+                    </div>
+                    <span class="text-xl font-bold text-white tracking-tight">InvestEngine</span>
+                </div>
+                <div class="flex items-center space-x-1">
+                    <a href="/" class="px-4 py-2 rounded-md text-sm font-medium bg-indigo-800 text-white shadow-sm">Dashboard</a>
+                    <a href="/upload/" class="px-4 py-2 rounded-md text-sm font-medium text-indigo-100 hover:bg-indigo-800 hover:text-white transition-all">Upload</a>
+                    <a href="/mappings/" class="px-4 py-2 rounded-md text-sm font-medium text-indigo-100 hover:bg-indigo-800 hover:text-white transition-all">Mappings</a>
+                    <a href="/rebalance/" class="px-4 py-2 rounded-md text-sm font-medium text-indigo-100 hover:bg-indigo-800 hover:text-white transition-all">Rebalance</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div id="stats-container">
+            <div class="flex items-center justify-center h-64">
+                <div class="text-gray-500">Loading portfolio data...</div>
+            </div>
+        </div>
+        <div id="charts-container" class="mt-8 space-y-8"></div>
+    </main>
+
+    <script>
+        let lineChart = null;
+        let barChart = null;
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value);
+        }
+
+        function formatPercent(value) {
+            return (value * 100).toFixed(2) + '%';
+        }
+
+        function timeAgo(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString.replace(' ', 'T'));
+            const seconds = Math.floor((new Date() - date) / 1000);
+            
+            let interval = seconds / 31536000;
+            if (interval > 1) return Math.floor(interval) + " years ago";
+            interval = seconds / 2592000;
+            if (interval > 1) return Math.floor(interval) + " months ago";
+            interval = seconds / 86400;
+            if (interval > 1) return Math.floor(interval) + " days ago";
+            interval = seconds / 3600;
+            if (interval > 1) return Math.floor(interval) + " hours ago";
+            interval = seconds / 60;
+            if (interval > 1) return Math.floor(interval) + " minutes ago";
+            return "Just now";
+        }
+
+        function renderDashboard(data) {
+            const s = data.portfolio_stats;
+            if (!s) {
+                renderEmptyState();
+                return;
+            }
+
+            const plPositive = s.profit_loss >= 0;
+            const plClass = plPositive ? 'text-green-600' : 'text-red-600';
+            const plBgClass = plPositive ? 'bg-green-50' : 'bg-red-50';
+
+            const statsHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-white rounded-2xl shadow-sm p-6 border border-gray-100 flex items-start justify-between">
+                        <div>
+                            <p class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Current Value</p>
+                            <p class="mt-2 text-3xl font-extrabold text-gray-900">${formatCurrency(s.current_value)}</p>
+                            <div class="mt-2 flex items-center text-xs text-gray-400">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                As of ${s.calc_date}
+                            </div>
+                        </div>
+                        <div class="p-3 bg-indigo-50 rounded-xl">
+                            <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-2xl shadow-sm p-6 border border-gray-100 flex items-start justify-between">
+                        <div>
+                            <p class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Total Invested</p>
+                            <p class="mt-2 text-3xl font-extrabold text-gray-900">${formatCurrency(s.total_invested)}</p>
+                            <p class="mt-2 text-xs text-gray-400">Net contributions</p>
+                        </div>
+                        <div class="p-3 bg-blue-50 rounded-xl">
+                            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                        </div>
+                    </div>
+
+                    <div class="${plBgClass} rounded-2xl shadow-sm p-6 border border-opacity-10 flex items-start justify-between">
+                        <div>
+                            <p class="text-sm font-semibold ${plClass} opacity-80 uppercase tracking-wider">Total Profit / Loss</p>
+                            <p class="mt-2 text-3xl font-extrabold ${plClass}">${plPositive ? '+' : ''}${formatCurrency(s.profit_loss)}</p>
+                            <div class="mt-2 flex items-center text-sm font-bold ${plClass}">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${plPositive ? 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' : 'M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6'}"></path></svg>
+                                ${formatPercent(s.return_percentage)}
+                            </div>
+                        </div>
+                        <div class="p-3 ${plPositive ? 'bg-green-100' : 'bg-red-100'} rounded-xl">
+                            <svg class="w-6 h-6 ${plClass}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">TWR (Annualized)</p>
+                            <span class="flex h-2 w-2 rounded-full ${s.twr >= 0 ? 'bg-green-500' : 'bg-red-500'}"></span>
+                        </div>
+                        <p class="mt-2 text-2xl font-bold ${s.twr >= 0 ? 'text-green-600' : 'text-red-600'}">${formatPercent(s.twr)}</p>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">IRR (Annualized)</p>
+                            <span class="flex h-2 w-2 rounded-full ${s.irr >= 0 ? 'bg-green-500' : 'bg-red-500'}"></span>
+                        </div>
+                        <p class="mt-2 text-2xl font-bold ${s.irr >= 0 ? 'text-green-600' : 'text-red-600'}">${formatPercent(s.irr)}</p>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100">
+                        <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">Data Freshness</p>
+                        <div class="mt-2 flex items-center justify-between">
+                            <div class="flex items-center">
+                                <div class="relative flex items-center justify-center mr-2">
+                                    <span class="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-green-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                </div>
+                                <span class="text-sm font-bold text-gray-700">${timeAgo(s.last_updated)}</span>
+                            </div>
+                            <span class="text-[10px] font-mono text-gray-400">${s.last_updated ? s.last_updated.split(' ')[1].split('.')[0] : ''}</span>
+                        </div>
+                        <p class="mt-1 text-[11px] text-gray-400 font-medium">Auto-updated via background task</p>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('stats-container').innerHTML = statsHtml;
+
+            const chartsContainer = document.getElementById('charts-container');
+            chartsContainer.innerHTML = '';
+
+            if (lineChart) lineChart.destroy();
+            if (barChart) barChart.destroy();
+
+            if (data.daily_dates && data.daily_values && data.daily_values.length > 0) {
+                const lineChartHtml = `
+                    <div class="bg-white rounded-2xl shadow-sm p-6 border border-gray-100 mb-8">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-lg font-bold text-gray-900">Portfolio Performance</h2>
+                                <p class="text-xs text-gray-400 font-medium">Daily valuation based on market close prices</p>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="flex items-center text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">
+                                    <span class="w-2 h-2 bg-indigo-600 rounded-full mr-1.5"></span>
+                                    Total Value
+                                </span>
+                            </div>
+                        </div>
+                        <div style="height: 400px;">
+                            <canvas id="lineChartCanvas"></canvas>
+                        </div>
+                    </div>
+                `;
+                chartsContainer.insertAdjacentHTML('beforeend', lineChartHtml);
+
+                const ctx = document.getElementById('lineChartCanvas').getContext('2d');
+                const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+                gradient.addColorStop(0, 'rgba(79, 70, 229, 0.15)');
+                gradient.addColorStop(1, 'rgba(79, 70, 229, 0.01)');
+
+                lineChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: [{
+                            label: 'Portfolio Value',
+                            data: data.daily_dates.map((d, i) => ({
+                                x: new Date(d),
+                                y: data.daily_values[i]
+                            })),
+                            borderColor: '#4f46e5',
+                            borderWidth: 3,
+                            backgroundColor: gradient,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 6,
+                            pointHoverBackgroundColor: '#4f46e5',
+                            pointHoverBorderColor: '#fff',
+                            pointHoverBorderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index',
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: '#1e1b4b',
+                                padding: 12,
+                                titleFont: { size: 13, weight: 'bold' },
+                                bodyFont: { size: 14 },
+                                cornerRadius: 8,
+                                displayColors: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        return formatCurrency(context.raw.y);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'month',
+                                    displayFormats: { month: 'MMM yyyy' }
+                                },
+                                grid: { display: false },
+                                border: { display: false },
+                                ticks: { 
+                                    maxTicksLimit: 8,
+                                    color: '#94a3b8',
+                                    font: { size: 11, weight: '500' }
+                                }
+                            },
+                            y: {
+                                position: 'right',
+                                grid: { color: '#f1f5f9' },
+                                border: { display: false },
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: { size: 11, weight: '500' },
+                                    callback: function(value) {
+                                        return '£' + (value >= 1000 ? (value/1000).toFixed(1) + 'k' : value);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            if (data.monthly_net && data.monthly_net.length > 0) {
+                const barChartHtml = `
+                    <div class="bg-white rounded-2xl shadow-sm p-6 border border-gray-100">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 class="text-lg font-bold text-gray-900">Monthly Net Contributions</h2>
+                                <p class="text-xs text-gray-400 font-medium">Net inflow/outflow per calendar month</p>
+                            </div>
+                        </div>
+                        <div style="height: 350px;">
+                            <canvas id="barChartCanvas"></canvas>
+                        </div>
+                    </div>
+                `;
+                chartsContainer.insertAdjacentHTML('beforeend', barChartHtml);
+
+                const months = data.monthly_net.map(m => {
+                    const [year, month] = m.Month.split('-');
+                    return new Date(year, month-1).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+                });
+                const netValues = data.monthly_net.map(m => m.Net_Value);
+                const colors = netValues.map(v => v >= 0 ? '#10b981' : '#f43f5e');
+                const hoverColors = netValues.map(v => v >= 0 ? '#059669' : '#e11d48');
+
+                barChart = new Chart(document.getElementById('barChartCanvas'), {
+                    type: 'bar',
+                    data: {
+                        labels: months,
+                        datasets: [{
+                            label: 'Net Contributions',
+                            data: netValues,
+                            backgroundColor: colors,
+                            hoverBackgroundColor: hoverColors,
+                            borderRadius: 6,
+                            borderSkipped: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: '#1e1b4b',
+                                padding: 12,
+                                cornerRadius: 8,
+                                callbacks: {
+                                    label: function(context) {
+                                        return 'Net: ' + formatCurrency(context.raw);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { display: false },
+                                border: { display: false },
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: { size: 10, weight: '600' }
+                                }
+                            },
+                            y: {
+                                grid: { color: '#f1f5f9', borderDash: [2, 2] },
+                                border: { display: false },
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: { size: 10, weight: '500' },
+                                    callback: function(value) {
+                                        if (value === 0) return '0';
+                                        return '£' + (Math.abs(value) >= 1000 ? (value/1000).toFixed(1) + 'k' : value);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function renderEmptyState() {
+            if (lineChart) lineChart.destroy();
+            if (barChart) barChart.destroy();
+
+            const html = `
+                <div class="bg-white rounded-xl shadow-sm p-12 border border-gray-200 text-center">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <h3 class="mt-4 text-lg font-medium text-gray-900">No portfolio data</h3>
+                    <p class="mt-2 text-gray-500">Upload your trading CSV files to see your portfolio statistics.</p>
+                    <a href="/upload/" class="mt-6 inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                        Upload Files
+                    </a>
+                </div>
+            `;
+            document.getElementById('stats-container').innerHTML = html;
+            document.getElementById('charts-container').innerHTML = '';
+        }
+
+        function renderError(message) {
+            if (lineChart) lineChart.destroy();
+            if (barChart) barChart.destroy();
+
+            const html = `
+                <div class="bg-red-50 rounded-xl p-6 border border-red-200">
+                    <p class="text-red-800 font-medium">Error loading portfolio data</p>
+                    <p class="text-red-600 text-sm mt-1">${message}</p>
+                </div>
+            `;
+            document.getElementById('stats-container').innerHTML = html;
+        }
+
+        fetch('/portfolio-values/')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.portfolio_stats) {
+                    renderDashboard(data);
+                } else if (data.error) {
+                    renderError(data.error);
+                } else {
+                    renderEmptyState();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                renderError('Failed to fetch portfolio data');
+            });
+    </script>
+</body>
+</html>

@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rebalance Portfolio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-indigo-900 shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                        </svg>
+                    </div>
+                    <span class="text-xl font-bold text-white tracking-tight">InvestEngine</span>
+                </div>
+                <div class="flex items-center space-x-1">
+                    <a href="/" class="px-4 py-2 rounded-md text-sm font-medium text-indigo-100 hover:bg-indigo-800 hover:text-white transition-all">Dashboard</a>
+                    <a href="/upload/" class="px-4 py-2 rounded-md text-sm font-medium text-indigo-100 hover:bg-indigo-800 hover:text-white transition-all">Upload</a>
+                    <a href="/mappings/" class="px-4 py-2 rounded-md text-sm font-medium text-indigo-100 hover:bg-indigo-800 hover:text-white transition-all">Mappings</a>
+                    <a href="/rebalance/" class="px-4 py-2 rounded-md text-sm font-medium bg-indigo-800 text-white shadow-sm">Rebalance</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div class="mb-10 text-center">
+            <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Portfolio Rebalancing</h1>
+            <p class="mt-2 text-lg text-gray-500">Optimize your asset allocation based on target weights and new capital.</p>
+        </div>
+
+        <div id="current-portfolio" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+            <div class="flex items-center justify-center h-32">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            </div>
+        </div>
+
+        <div id="controls-section" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+                <div class="flex items-center mb-6">
+                    <div class="p-2 bg-green-50 rounded-lg mr-3">
+                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </div>
+                    <h2 class="text-xl font-bold text-gray-900">New Capital</h2>
+                </div>
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Investment Amount (GBP)</label>
+                <div class="relative">
+                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">£</span>
+                    <input type="number" id="new-capital" value="0" min="0" step="0.01" 
+                        class="w-full pl-8 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all outline-none text-2xl font-extrabold text-gray-900">
+                </div>
+                <p class="mt-4 text-sm text-gray-400 font-medium">This amount will be distributed across tickers to reach your targets.</p>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-indigo-50 rounded-lg mr-3">
+                            <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                        </div>
+                        <h2 class="text-xl font-bold text-gray-900">Target Allocations</h2>
+                    </div>
+                    <div class="px-4 py-2 bg-indigo-900 rounded-xl">
+                        <span class="text-xs font-bold text-indigo-300 uppercase tracking-tighter block leading-tight">Total Weight</span>
+                        <span class="text-xl font-black text-white leading-tight"><span id="total-pct">100.00</span>%</span>
+                    </div>
+                </div>
+                <div id="sliders-container" class="space-y-6"></div>
+            </div>
+        </div>
+
+        <div id="results-section" class="hidden mb-10">
+            <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                <div class="px-8 py-6 border-b border-gray-50 bg-gray-50/50 flex items-center justify-between">
+                    <h2 class="text-xl font-bold text-gray-900">Recommended Investments</h2>
+                    <div class="text-right">
+                        <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">Total to Invest</p>
+                        <p id="total-investment" class="text-2xl font-black text-green-600">£0.00</p>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="text-left bg-white">
+                                <th class="py-4 px-8 text-xs font-bold text-gray-400 uppercase tracking-widest">Ticker</th>
+                                <th class="py-4 px-8 text-right text-xs font-bold text-gray-400 uppercase tracking-widest">Current Value</th>
+                                <th class="py-4 px-8 text-right text-xs font-bold text-gray-400 uppercase tracking-widest">Target Value</th>
+                                <th class="py-4 px-8 text-right text-xs font-bold text-gray-400 uppercase tracking-widest">Buy/Sell</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="error-section" class="mt-6"></div>
+    </main>
+
+    <script>
+        let currentData = null;
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value);
+        }
+
+        fetch('/rebalance/data/')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    currentData = data;
+                    renderCurrentPortfolio(data);
+                    setupControls();
+                } else {
+                    document.getElementById('current-portfolio').innerHTML = 
+                        `<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">Error: ${data.error}</div>`;
+                }
+            })
+            .catch(err => {
+                document.getElementById('current-portfolio').innerHTML = 
+                    `<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">Connection Error: ${err.message}</div>`;
+            });
+
+        function renderCurrentPortfolio(data) {
+            const section = document.getElementById('current-portfolio');
+            if (!data.tickers.length) {
+                section.innerHTML = '<div class="text-center py-12"><p class="text-gray-400 font-medium">No invested tickers found. Upload trades first.</p></div>';
+                return;
+            }
+            let html = `
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-900">Current Portfolio</h2>
+                        <p class="text-sm text-gray-400 font-medium">Based on latest market data</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Valuation</p>
+                        <p class="text-2xl font-black text-indigo-600">${formatCurrency(data.total_value)}</p>
+                    </div>
+                </div>
+                <div class="overflow-x-auto"><table class="w-full">
+                    <thead><tr class="text-left border-b border-gray-50">
+                        <th class="pb-3 text-xs font-bold text-gray-400 uppercase tracking-widest">Ticker</th>
+                        <th class="pb-3 text-right text-xs font-bold text-gray-400 uppercase tracking-widest">Value</th>
+                        <th class="pb-3 text-right text-xs font-bold text-gray-400 uppercase tracking-widest">Allocation</th>
+                    </tr></thead>
+                    <tbody>
+            `;
+            data.tickers.forEach(t => {
+                html += `<tr class="border-b border-gray-50/50">
+                    <td class="py-4 font-bold text-gray-900 font-mono">${t.ticker}</td>
+                    <td class="py-4 text-right font-medium text-gray-600">${formatCurrency(t.current_value)}</td>
+                    <td class="py-4 text-right">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-800">
+                            ${t.current_allocation_pct.toFixed(2)}%
+                        </span>
+                    </td>
+                </tr>`;
+            });
+            html += '</tbody></table></div>';
+            section.innerHTML = html;
+        }
+
+        function setupControls() {
+            document.getElementById('controls-section').classList.remove('hidden');
+            const container = document.getElementById('sliders-container');
+            let html = '';
+            currentData.tickers.forEach(t => {
+                html += `
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-end">
+                            <span class="text-sm font-black text-gray-700 font-mono tracking-wider">${t.ticker}</span>
+                            <div class="relative">
+                                <input type="number" id="input-${t.ticker}" value="${t.current_allocation_pct.toFixed(2)}" min="0" max="100" step="0.5"
+                                    class="w-20 px-2 py-1 bg-indigo-50 border-none rounded-lg text-sm font-black text-indigo-700 text-right focus:ring-2 focus:ring-indigo-400 outline-none" onchange="handleInputChange('${t.ticker}')">
+                                <span class="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] font-bold text-indigo-400 mr-1">%</span>
+                            </div>
+                        </div>
+                        <input type="range" id="slider-${t.ticker}" min="0" max="100" step="0.5" value="${t.current_allocation_pct}"
+                            class="w-full h-2 bg-indigo-50 rounded-lg appearance-none cursor-pointer accent-indigo-600" oninput="handleSliderChange('${t.ticker}')">
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+
+            document.getElementById('new-capital').addEventListener('input', calculateRebalance);
+            calculateRebalance();
+        }
+
+        function handleSliderChange(ticker) {
+            const val = parseFloat(document.getElementById(`slider-${ticker}`).value);
+            document.getElementById(`input-${ticker}`).value = val.toFixed(2);
+            normalizeAndCalculate(ticker);
+        }
+
+        function handleInputChange(ticker) {
+            const val = parseFloat(document.getElementById(`input-${ticker}`).value);
+            document.getElementById(`slider-${ticker}`).value = val;
+            normalizeAndCalculate(ticker);
+        }
+
+        function normalizeAndCalculate(changedTicker) {
+            let total = 0;
+            currentData.tickers.forEach(t => {
+                total += parseFloat(document.getElementById(`slider-${t.ticker}`).value);
+            });
+
+            if (Math.abs(total - 100) > 0.1 && total > 0) {
+                const factor = 100 / total;
+                currentData.tickers.forEach(t => {
+                    const newVal = parseFloat(document.getElementById(`slider-${t.ticker}`).value) * factor;
+                    document.getElementById(`slider-${t.ticker}`).value = newVal;
+                    document.getElementById(`input-${t.ticker}`).value = newVal.toFixed(2);
+                });
+            }
+
+            total = 0;
+            currentData.tickers.forEach(t => total += parseFloat(document.getElementById(`slider-${t.ticker}`).value));
+            document.getElementById('total-pct').textContent = total.toFixed(2);
+            calculateRebalance();
+        }
+
+        function calculateRebalance() {
+            if (!currentData) return;
+
+            const newCapital = parseFloat(document.getElementById('new-capital').value) || 0;
+            const targetAllocations = {};
+            currentData.tickers.forEach(t => {
+                targetAllocations[t.ticker] = parseFloat(document.getElementById(`slider-${t.ticker}`).value);
+            });
+
+            fetch('/rebalance/calculate/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    new_capital: newCapital,
+                    target_allocations: targetAllocations,
+                    current_tickers: currentData.tickers
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    renderResults(data);
+                    document.getElementById('results-section').classList.remove('hidden');
+                } else {
+                    document.getElementById('error-section').innerHTML = 
+                        `<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800 font-bold">${data.error}</div>`;
+                }
+            })
+            .catch(err => {
+                document.getElementById('error-section').innerHTML = 
+                    `<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800 font-bold">Calculation failed: ${err.message}</div>`;
+            });
+        }
+
+        function renderResults(data) {
+            const tbody = document.getElementById('results-body');
+            let html = '';
+            let totalInv = 0;
+            data.investments.forEach(inv => {
+                const isPositive = inv.investment_amount > 0;
+                const invClass = isPositive ? 'text-green-600 bg-green-50' : 'text-gray-400 bg-gray-50';
+                html += `<tr class="border-b border-gray-50/50 hover:bg-gray-50/30 transition-colors">
+                    <td class="py-5 px-8 font-black text-gray-900 font-mono tracking-tighter">${inv.ticker}</td>
+                    <td class="py-5 px-8 text-right font-medium text-gray-500">${formatCurrency(inv.current_value)}</td>
+                    <td class="py-5 px-8 text-right font-bold text-gray-900">${formatCurrency(inv.target_value)}</td>
+                    <td class="py-5 px-8 text-right">
+                        <span class="inline-flex items-center px-4 py-1.5 rounded-xl font-black ${invClass}">
+                            ${isPositive ? '+' : ''}${formatCurrency(inv.investment_amount)}
+                        </span>
+                    </td>
+                </tr>`;
+                totalInv += inv.investment_amount;
+            });
+            tbody.innerHTML = html;
+            document.getElementById('total-investment').textContent = formatCurrency(totalInv);
+        }
+    </script>
+</body>
+</html>
