@@ -2,3 +2,4 @@
 /statements
 *.db
 .env
+/data

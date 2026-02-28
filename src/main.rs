@@ -22,6 +22,8 @@ use std::str::FromStr;
 use askama::Template;
 use axum::response::Html;
 
+use tower_http::trace::TraceLayer;
+
 #[derive(Template)]
 #[template(path = "index.html")]
 struct IndexTemplate {}
@@ -77,8 +79,9 @@ async fn main() {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let db_path = "investengine.db";
-    let db = Database::new(db_path).expect("Failed to initialize database");
+    let db_path = std::env::var("CSV_DATABASE_URL")
+        .unwrap_or_else(|_| "/app/data/investengine.db".to_string());
+    let db = Database::new(&db_path).expect("Failed to initialize database");
     let shared_state = Arc::new(AppState { db: Arc::new(Mutex::new(db)) });
 
     let app = Router::new()
@@ -95,6 +98,7 @@ async fn main() {
         .route("/portfolio-values/", get(get_portfolio_values_handler))
         .route("/rebalance/data/", get(get_rebalance_data_handler))
         .route("/rebalance/calculate/", post(calculate_rebalance_handler))
+        .layer(TraceLayer::new_for_http())
         .with_state(shared_state);
 
     let port = std::env::var("CSV_SERVER_PORT")
