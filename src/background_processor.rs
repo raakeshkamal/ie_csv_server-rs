@@ -5,25 +5,19 @@ use rust_decimal::prelude::FromPrimitive;
 use std::collections::{HashMap, HashSet};
 use tracing::{info, error};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 use crate::database::Database;
 use crate::prices::{PriceFetcher, CurrencyConverter};
 use crate::portfolio_stats::calculate_portfolio_stats;
 
-pub async fn precompute_portfolio_data(db_arc: Arc<Mutex<Database>>) -> Result<()> {
-    // 1. Initial status - need to hold lock briefly to update status
-    let status_id = {
-        let db = db_arc.lock().await;
-        db.update_precompute_status("in_progress", None, None)?
-    };
+pub async fn precompute_portfolio_data(db: Arc<Database>) -> Result<()> {
+    // 1. Initial status
+    let status_id = db.update_precompute_status("in_progress", None, None).await?;
     info!("Starting background precomputation (status_id: {})", status_id);
 
     // 2. Load basic data from DB
-    let (trades, external_cfs) = {
-        let db = db_arc.lock().await;
-        (db.load_trades()?, db.get_external_cash_flows()?)
-    };
+    let trades = db.load_trades().await?;
+    let external_cfs = db.get_external_cash_flows().await?;
 
     if trades.is_empty() {
         return Ok(());
@@ -49,7 +43,7 @@ pub async fn precompute_portfolio_data(db_arc: Arc<Mutex<Database>>) -> Result<(
         }
     }
 
-    // 4. Fetch Prices and FX asynchronously (outside DB lock)
+    // 4. Fetch Prices and FX asynchronously
     let price_fetcher = PriceFetcher::new();
     let currency_converter = CurrencyConverter::new();
     
@@ -101,12 +95,9 @@ pub async fn precompute_portfolio_data(db_arc: Arc<Mutex<Database>>) -> Result<(
     }
 
     // 5. Perform the heavy computation and DB updates
-    // Since Database is not Sync, we do this in a single block while holding the lock
-    
-    let db_lock = db_arc.lock().await;
     
     // Clear old data
-    db_lock.clear_precomputed_data()?;
+    db.clear_precomputed_data().await?;
 
     // Process each date and ticker
     let dates: Vec<NaiveDate> = min_date.iter_days().take_while(|&d| d <= max_date).collect();
@@ -143,7 +134,7 @@ pub async fn precompute_portfolio_data(db_arc: Arc<Mutex<Database>>) -> Result<(
             ticker_conv.insert(date, converted);
             
             if !price.is_zero() {
-                db_lock.save_precomputed_ticker_price(ticker, date, reported_currency, price, converted)?;
+                db.save_precomputed_ticker_price(ticker, date, reported_currency, price, converted).await?;
             }
         }
         converted_prices.insert(ticker.clone(), ticker_conv);
@@ -154,10 +145,23 @@ pub async fn precompute_portfolio_data(db_arc: Arc<Mutex<Database>>) -> Result<(
     sorted_trades.sort_by_key(|t| t.trade_date_time);
     let mut current_holdings: HashMap<String, Decimal> = HashMap::new();
     let mut trade_idx = 0;
+    let mut total_invested_so_far = Decimal::ZERO;
+
+    // Pre-map external cash flows for faster lookup
+    let mut external_cfs_map: HashMap<NaiveDate, Decimal> = HashMap::new();
+    for (d, f) in &external_cfs {
+        *external_cfs_map.entry(*d).or_insert(Decimal::ZERO) += *f;
+    }
 
     for (d_idx, &date) in dates.iter().enumerate() {
+        // Update total_invested based on external cash flows for this date
+        if let Some(cf_amount) = external_cfs_map.get(&date) {
+            total_invested_so_far += *cf_amount;
+        }
+
         while trade_idx < sorted_trades.len() && sorted_trades[trade_idx].trade_date_time.date() <= date {
             let t = &sorted_trades[trade_idx];
+            
             if let Some(ref ticker) = t.ticker {
                 let entry = current_holdings.entry(ticker.clone()).or_insert(Decimal::ZERO);
                 let quantity = t.quantity;
@@ -181,10 +185,10 @@ pub async fn precompute_portfolio_data(db_arc: Arc<Mutex<Database>>) -> Result<(
             total_val += val;
             
             // Save value for every ticker on every date to ensure vector alignment in API
-            db_lock.save_precomputed_ticker_daily_value(date, ticker, val)?;
+            db.save_precomputed_ticker_daily_value(date, ticker, val).await?;
         }
         total_daily_values.push(total_val);
-        db_lock.save_precomputed_portfolio_value(date, total_val)?;
+        db.save_precomputed_portfolio_value(date, total_val, total_invested_so_far).await?;
     }
 
     // Monthly Contributions
@@ -201,7 +205,7 @@ pub async fn precompute_portfolio_data(db_arc: Arc<Mutex<Database>>) -> Result<(
         *monthly_net.entry(month).or_insert(Decimal::ZERO) += *net_flow;
     }
     for (month, val) in monthly_net {
-        db_lock.save_precomputed_monthly_contribution(&month, val)?;
+        db.save_precomputed_monthly_contribution(&month, val).await?;
     }
 
     // Stats
@@ -212,7 +216,7 @@ pub async fn precompute_portfolio_data(db_arc: Arc<Mutex<Database>>) -> Result<(
     }
     let stats = calculate_portfolio_stats(&stats_cfs, current_value, max_date, Some((&dates, &total_daily_values)));
 
-    db_lock.save_precomputed_metrics(
+    db.save_precomputed_metrics(
         Decimal::from_f64(stats.irr).unwrap_or_default(),
         Decimal::from_f64(stats.twr).unwrap_or_default(),
         stats.total_invested,
@@ -220,9 +224,9 @@ pub async fn precompute_portfolio_data(db_arc: Arc<Mutex<Database>>) -> Result<(
         stats.profit_loss,
         stats.return_percentage,
         &max_date.to_string()
-    )?;
+    ).await?;
 
-    db_lock.update_precompute_status("completed", None, None)?;
+    db.update_precompute_status("completed", None, None).await?;
     info!("Precomputation completed successfully");
 
     Ok(())

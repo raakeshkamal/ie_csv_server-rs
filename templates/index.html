@@ -148,7 +148,12 @@
                                 </div>
                                 <span class="text-sm font-bold text-gray-700">${timeAgo(s.last_updated)}</span>
                             </div>
-                            <span class="text-[10px] font-mono text-gray-400">${s.last_updated ? s.last_updated.split(' ')[1].split('.')[0] : ''}</span>
+                            <span class="text-[10px] font-mono text-gray-400">${(() => {
+                                if (!s.last_updated) return '';
+                                const parts = s.last_updated.split(/[ T]/);
+                                if (parts.length < 2) return '';
+                                return parts[1].split('.')[0];
+                            })()}</span>
                         </div>
                         <p class="mt-1 text-[11px] text-gray-400 font-medium">Auto-updated via background task</p>
                     </div>
@@ -171,7 +176,11 @@
                                 <h2 class="text-lg font-bold text-gray-900">Portfolio Performance</h2>
                                 <p class="text-xs text-gray-400 font-medium">Daily valuation based on market close prices</p>
                             </div>
-                            <div class="flex items-center space-x-2">
+                            <div class="flex items-center space-x-3">
+                                <span class="flex items-center text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">
+                                    <span class="w-2 h-2 bg-slate-400 rounded-full mr-1.5"></span>
+                                    Total Invested
+                                </span>
                                 <span class="flex items-center text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">
                                     <span class="w-2 h-2 bg-indigo-600 rounded-full mr-1.5"></span>
                                     Total Value
@@ -193,23 +202,43 @@
                 lineChart = new Chart(ctx, {
                     type: 'line',
                     data: {
-                        datasets: [{
-                            label: 'Portfolio Value',
-                            data: data.daily_dates.map((d, i) => ({
-                                x: new Date(d),
-                                y: data.daily_values[i]
-                            })),
-                            borderColor: '#4f46e5',
-                            borderWidth: 3,
-                            backgroundColor: gradient,
-                            fill: true,
-                            tension: 0.4,
-                            pointRadius: 0,
-                            pointHoverRadius: 6,
-                            pointHoverBackgroundColor: '#4f46e5',
-                            pointHoverBorderColor: '#fff',
-                            pointHoverBorderWidth: 2
-                        }]
+                        datasets: [
+                            {
+                                label: 'Total Value',
+                                data: data.daily_dates.map((d, i) => ({
+                                    x: new Date(d),
+                                    y: data.daily_values[i]
+                                })),
+                                borderColor: '#4f46e5',
+                                borderWidth: 3,
+                                backgroundColor: gradient,
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 0,
+                                pointHoverRadius: 6,
+                                pointHoverBackgroundColor: '#4f46e5',
+                                pointHoverBorderColor: '#fff',
+                                pointHoverBorderWidth: 2
+                            },
+                            {
+                                label: 'Total Invested',
+                                data: data.daily_dates.map((d, i) => ({
+                                    x: new Date(d),
+                                    y: data.daily_invested ? data.daily_invested[i] : 0
+                                })),
+                                borderColor: '#94a3b8',
+                                borderWidth: 2,
+                                borderDash: [5, 5],
+                                backgroundColor: 'transparent',
+                                fill: false,
+                                tension: 0.1,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                pointHoverBackgroundColor: '#94a3b8',
+                                pointHoverBorderColor: '#fff',
+                                pointHoverBorderWidth: 2
+                            }
+                        ]
                     },
                     options: {
                         responsive: true,
@@ -226,10 +255,16 @@
                                 titleFont: { size: 13, weight: 'bold' },
                                 bodyFont: { size: 14 },
                                 cornerRadius: 8,
-                                displayColors: false,
+                                displayColors: true,
+                                boxPadding: 6,
                                 callbacks: {
                                     label: function(context) {
-                                        return formatCurrency(context.raw.y);
+                                        let label = context.dataset.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        label += formatCurrency(context.raw.y);
+                                        return label;
                                     }
                                 }
                             }

@@ -1,9 +1,8 @@
 use anyhow::{Result, anyhow};
-use chrono::{NaiveDate, Duration};
+use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use yfinance_rs::{Ticker, YfClient, Range, Interval};
 use std::collections::HashMap;
-use crate::database::Database;
 use std::str::FromStr;
 
 pub struct PriceFetcher {
@@ -74,7 +73,6 @@ impl PriceFetcher {
 }
 
 pub struct CurrencyConverter {
-    fetcher: PriceFetcher,
     fx_config: HashMap<String, (String, bool)>, // Currency -> (FX Ticker, Multiply)
 }
 
@@ -85,7 +83,6 @@ impl CurrencyConverter {
         fx_config.insert("EUR".to_string(), ("EURGBP=X".to_string(), true));
         
         Self {
-            fetcher: PriceFetcher::new(),
             fx_config,
         }
     }

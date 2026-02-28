@@ -39,7 +39,7 @@ RUN mkdir -p /app/data
 # Set the port from .env (default to 8000)
 ARG CSV_SERVER_PORT=8000
 ENV CSV_SERVER_PORT=${CSV_SERVER_PORT}
-ENV CSV_DATABASE_URL=/app/data/investengine.db
+ENV MONGO_URI=mongodb://mongodb:27017/bot_db
 
 # Expose the configured port
 EXPOSE ${CSV_SERVER_PORT}

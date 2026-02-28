@@ -7,7 +7,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tracing::{info, error};
 use tracing_subscriber;
 use investengine_csv_server_rs::database::Database;
@@ -41,7 +40,7 @@ struct MappingsTemplate {}
 struct RebalanceTemplate {}
 
 struct AppState {
-    db: Arc<Mutex<Database>>,
+    db: Arc<Database>,
 }
 
 async fn index_handler() -> impl IntoResponse {
@@ -79,10 +78,11 @@ async fn main() {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let db_path = std::env::var("CSV_DATABASE_URL")
-        .unwrap_or_else(|_| "/app/data/investengine.db".to_string());
-    let db = Database::new(&db_path).expect("Failed to initialize database");
-    let shared_state = Arc::new(AppState { db: Arc::new(Mutex::new(db)) });
+    let mongo_uri = std::env::var("MONGO_URI")
+        .unwrap_or_else(|_| "mongodb://mongodb:27017/bot_db".to_string());
+    info!("Initializing with MongoDB URI: {}", mongo_uri);
+    let db = Database::new(&mongo_uri).await.expect("Failed to initialize database");
+    let shared_state = Arc::new(AppState { db: Arc::new(db) });
 
     let app = Router::new()
         .route("/", get(index_handler))
@@ -130,10 +130,10 @@ struct RebalanceDataResponse {
 async fn get_rebalance_data_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let db = state.db.lock().await;
+    let db = &state.db;
 
     // 1. Validate mappings
-    match db.get_isins_without_mappings() {
+    match db.get_isins_without_mappings().await {
         Ok(missing) if !missing.is_empty() => {
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
                 "success": false,
@@ -151,7 +151,7 @@ async fn get_rebalance_data_handler(
     }
 
     // 2. Get precomputed data
-    let portfolio_data = match db.get_portfolio_values_precomputed() {
+    let portfolio_data = match db.get_portfolio_values_precomputed().await {
         Ok(Some(d)) => d,
         Ok(None) => {
             return (StatusCode::NOT_FOUND, Json(serde_json::json!({
@@ -280,8 +280,8 @@ struct TradesResponse {
 async fn export_trades_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let db = state.db.lock().await;
-    match db.load_trades() {
+    let db = &state.db;
+    match db.load_trades().await {
         Ok(trades) => {
             if trades.is_empty() {
                 return (StatusCode::NOT_FOUND, Json(serde_json::json!({
@@ -307,10 +307,10 @@ async fn export_trades_handler(
 async fn get_portfolio_values_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let db = state.db.lock().await;
+    let db = &state.db;
 
     // 1. Validate that all ISINs have ticker mappings
-    match db.get_isins_without_mappings() {
+    match db.get_isins_without_mappings().await {
         Ok(missing) if !missing.is_empty() => {
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
                 "success": false,
@@ -329,12 +329,12 @@ async fn get_portfolio_values_handler(
     }
 
     // 2. Try to get precomputed data first
-    let mut data = match db.get_portfolio_values_precomputed() {
+    let mut data = match db.get_portfolio_values_precomputed().await {
         Ok(Some(d)) => d,
         Ok(None) => {
             // No precomputed data yet
             // Check if there are even trades
-            match db.has_trades_data() {
+            match db.has_trades_data().await {
                 Ok(true) => {
                     // Trades exist, but no precomputed data. Trigger it and return error/in_progress
                     info!("No precomputed data but trades exist. Triggering precomputation...");
@@ -370,7 +370,7 @@ async fn get_portfolio_values_handler(
     };
 
     // 3. Check if precomputed data is up to date
-    let status = match db.get_precompute_status() {
+    let status = match db.get_precompute_status().await {
         Ok(s) => s,
         Err(_) => serde_json::json!({}),
     };
@@ -417,8 +417,8 @@ async fn get_portfolio_values_handler(
 async fn reset_database_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let db = state.db.lock().await;
-    match db.reset() {
+    let db = &state.db;
+    match db.reset().await {
         Ok(_) => {
             info!("Database reset successfully");
             (StatusCode::OK, Json(GenericResponse {
@@ -472,8 +472,8 @@ struct MappingResult {
 async fn get_mappings_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let db = state.db.lock().await;
-    match db.get_all_isin_ticker_mappings() {
+    let db = &state.db;
+    match db.get_all_isin_ticker_mappings().await {
         Ok(mappings) => {
             let count = mappings.len();
             Json(MappingsResponse {
@@ -496,7 +496,7 @@ async fn create_mapping_handler(
     State(state): State<Arc<AppState>>,
     Json(updates): Json<Vec<MappingUpdate>>,
 ) -> impl IntoResponse {
-    let db = state.db.lock().await;
+    let db = &state.db;
     let mut results = Vec::new();
     let isin_regex = regex::Regex::new(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$").unwrap();
     
@@ -515,7 +515,7 @@ async fn create_mapping_handler(
             continue;
         }
 
-        match db.save_isin_ticker_mapping(&update.isin, &update.ticker, update.security_name.as_deref()) {
+        match db.save_isin_ticker_mapping(&update.isin, &update.ticker, update.security_name.as_deref()).await {
             Ok(_) => {
                 results.push(MappingResult {
                     success: true,
@@ -544,8 +544,8 @@ async fn create_mapping_handler(
 async fn get_missing_mappings_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let db = state.db.lock().await;
-    match db.get_isins_without_mappings() {
+    let db = &state.db;
+    match db.get_isins_without_mappings().await {
         Ok(missing_isins) => {
             let count = missing_isins.len();
             Json(MissingMappingsResponse {
@@ -568,8 +568,8 @@ async fn delete_mapping_handler(
     State(state): State<Arc<AppState>>,
     Path(isin): Path<String>,
 ) -> impl IntoResponse {
-    let db = state.db.lock().await;
-    match db.delete_isin_ticker_mapping(&isin) {
+    let db = &state.db;
+    match db.delete_isin_ticker_mapping(&isin).await {
         Ok(true) => {
             Json(GenericResponse {
                 success: true,
@@ -595,10 +595,10 @@ async fn delete_mapping_handler(
 async fn export_prices_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let db = state.db.lock().await;
+    let db = &state.db;
     
     // 1. Get current precomputed data
-    let mut data = match db.get_all_precomputed_data() {
+    let mut data = match db.get_all_precomputed_data().await {
         Ok(d) => d,
         Err(e) => {
             error!("Error retrieving precomputed data: {}", e);
@@ -668,10 +668,10 @@ async fn upload_files_handler(
 ) -> impl IntoResponse {
     info!("Endpoint /upload/ called");
 
-    let db = state.db.lock().await;
+    let db = &state.db;
 
     // Check if database has existing data
-    match db.has_trades_data() {
+    match db.has_trades_data().await {
         Ok(true) => {
             return (StatusCode::BAD_REQUEST, Json(UploadResponse {
                 success: false,
@@ -747,7 +747,7 @@ async fn upload_files_handler(
                 // 3. Check existing mappings and search for missing ones once per ISIN
                 let mut mapping_cache = std::collections::HashMap::new();
                 for isin in unique_isins {
-                    match db.get_ticker_for_isin(&isin) {
+                    match db.get_ticker_for_isin(&isin).await {
                         Ok(Some(ticker)) => {
                             mapping_cache.insert(isin, Some(ticker));
                         }
@@ -755,7 +755,7 @@ async fn upload_files_handler(
                             info!("Searching ticker for ISIN: {}", isin);
                             match search_ticker_for_isin("", &isin).await {
                                 Ok(Some(ticker)) => {
-                                    db.save_isin_ticker_mapping(&isin, &ticker, None).unwrap_or_default();
+                                    db.save_isin_ticker_mapping(&isin, &ticker, None).await.unwrap_or_default();
                                     mapping_cache.insert(isin, Some(ticker));
                                 }
                                 _ => {
@@ -818,7 +818,7 @@ async fn upload_files_handler(
     }
 
     // Save to database
-    if let Err(e) = db.save_trades(&all_trading_records) {
+    if let Err(e) = db.save_trades(&all_trading_records).await {
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(UploadResponse {
             success: false,
             message: format!("Failed to save trades: {}", e),
@@ -828,7 +828,7 @@ async fn upload_files_handler(
         })).into_response();
     }
 
-    if let Err(e) = db.save_cash_flows(&all_cash_records) {
+    if let Err(e) = db.save_cash_flows(&all_cash_records).await {
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(UploadResponse {
             success: false,
             message: format!("Failed to save cash flows: {}", e),
